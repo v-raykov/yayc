@@ -22,18 +22,20 @@ sudo systemd-nspawn -D "$CONTAINER_PATH" -- bash -c "su - $AURUSER -c 'yay $FLAG
 # Split package name into an array of words (used for searching)
 IFS='-' read -ra PACKAGE_WORDS <<< "$PACKAGE"
 
-# Directories in the container where installed files reside
-CONTAINER_DIRS=(
-    "$CONTAINER_PATH/usr/bin"
-    "$CONTAINER_PATH/opt"
-    "$CONTAINER_PATH/usr/share/applications"
-)
+
 
 # Corresponding directories on the host where symlinks should be managed
 HOST_DIRS=(
     "$LINK_BIN"
     "$LINK_OPT"
     "$LINK_APPLICATIONS"
+)
+
+# Directories in the container where installed files reside
+CONTAINER_DIRS=(
+    "$CONTAINER_BIN"
+    "$CONTAINER_OPT"
+    "$CONTAINER_APPLICATIONS"
 )
 
 ### **Utility Functions**
@@ -96,9 +98,9 @@ create_symlinks() {
         filename=$(basename "$item")
 
         case "$item" in
-            "$CONTAINER_PATH/usr/bin/"*) create_symlink "$item" "$LINK_BIN/$filename" ;;
-            "$CONTAINER_PATH/opt/"*) create_symlink "$item" "$LINK_OPT/$filename" ;;
-            "$CONTAINER_PATH/usr/share/applications/"*) create_symlink "$item" "$LINK_APPLICATIONS/$filename" ;;
+            "$CONTAINER_BIN/"*) create_symlink "$item" "$LINK_BIN/$filename" ;;
+            "$CONTAINER_OPT/"*) create_symlink "$item" "$LINK_OPT/$filename" ;;
+            "$CONTAINER_APPLICATIONS/"*) create_symlink "$item" "$LINK_APPLICATIONS/$filename" ;;
         esac
     done
 }

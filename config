@@ -3,7 +3,12 @@ AURUSER="auruser"
 HOME="/home/$(whoami)"
 CONTAINER_PATH="$HOME/External/bloat"
 
-# Paths for symlinks
+# Paths for symlinks on host
 LINK_BIN="/usr/local/bin"
 LINK_OPT="/opt"
 LINK_APPLICATIONS="$HOME/.local/share/applications"
+
+# Paths in the container where installed files reside
+CONTAINER_BIN="$CONTAINER_PATH/usr/bin"
+CONTAINER_OPT="$CONTAINER_PATH$LINK_OPT"
+CONTAINER_OPT="$CONTAINER_PATH/usr/share/applications"
