@@ -1,0 +1,9 @@
+#!/bin/bash
+AURUSER="auruser"
+HOME="/home/$(whoami)"
+CONTAINER_PATH="$HOME/External/bloat"
+
+# Paths for symlinks
+LINK_BIN="/usr/local/bin"
+LINK_OPT="/opt"
+LINK_APPLICATIONS="$HOME/.local/share/applications"

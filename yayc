@@ -1,0 +1,134 @@
+#!/bin/bash
+
+# Get the directory of the script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/config"
+
+# Ensure at least one argument is provided
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <yay-flag> [package-name]" >&2
+    exit 1
+fi
+
+FLAG="$1"
+PACKAGE="$2"
+
+echo "Running yay $FLAG ${PACKAGE:-""} inside container at $CONTAINER_PATH..."
+sudo systemd-nspawn -D "$CONTAINER_PATH" -- bash -c "su - $AURUSER -c 'yay $FLAG --noconfirm ${PACKAGE:-}'"
+
+# Exit early if no package is provided (e.g., when querying available packages)
+[[ -z "$PACKAGE" ]] && exit 0
+
+# Split package name into an array of words (used for searching)
+IFS='-' read -ra PACKAGE_WORDS <<< "$PACKAGE"
+
+# Directories in the container where installed files reside
+CONTAINER_DIRS=(
+    "$CONTAINER_PATH/$LINK_BIN"
+    "$CONTAINER_PATH/$LINK_OPT"
+    "$CONTAINER_PATH/$LINK_APPLICATIONS"
+)
+
+# Corresponding directories on the host where symlinks should be managed
+HOST_DIRS=(
+    "$LINK_BIN"
+    "$LINK_OPT"
+    "$LINK_APPLICATIONS"
+)
+
+### **Utility Functions**
+
+# Find files and directories inside a given path that match package words
+find_matching_items() {
+    local search_dir="$1"
+    [[ -d "$search_dir" ]] || return
+
+    for word in "${PACKAGE_WORDS[@]}"; do
+        find "$search_dir" -mindepth 1 -maxdepth 1 -name "*$word*" \( -type f -o -type d \) 2>/dev/null
+    done
+}
+
+# Find existing symlinks in a given directory that match package words
+find_matching_symlinks() {
+    local search_dir="$1"
+    [[ -d "$search_dir" ]] || return
+
+    for word in "${PACKAGE_WORDS[@]}"; do
+        find "$search_dir" -mindepth 1 -maxdepth 1 -name "*$word*" -type l 2>/dev/null
+    done
+}
+
+# Create a symlink if the target exists and no symlink already exists
+create_symlink() {
+    local target="$1"
+    local link_name="$2"
+
+    if [[ -e "$target" && ! -e "$link_name" ]]; then
+        echo "Creating symlink: $link_name -> $target"
+        sudo ln -sfn "$target" "$link_name"
+    fi
+}
+
+# Remove a symlink if it exists
+remove_symlink() {
+    local link_name="$1"
+
+    if [[ -L "$link_name" ]]; then
+        echo "Removing symlink: $link_name"
+        sudo rm -f "$link_name"
+    fi
+}
+
+### **Symlink Management Functions**
+
+# Create symlinks for matched package files
+create_symlinks() {
+    local temp_file
+    temp_file=$(mktemp)
+
+    for dir in "${CONTAINER_DIRS[@]}"; do
+        find_matching_items "$dir" >> "$temp_file"
+    done
+
+    sort -u "$temp_file" | while IFS= read -r item; do
+        local filename
+        filename=$(basename "$item")
+
+        case "$item" in
+            "$CONTAINER_PATH/usr/bin/"*) create_symlink "$item" "$LINK_BIN/$filename" ;;
+            "$CONTAINER_PATH/opt/"*) create_symlink "$item" "$LINK_OPT/$filename" ;;
+            "$CONTAINER_PATH/usr/share/applications/"*) create_symlink "$item" "$LINK_APPLICATIONS/$filename" ;;
+        esac
+    done
+
+    rm -f "$temp_file"
+}
+
+# Remove symlinks for matched package files
+remove_symlinks() {
+    local temp_file
+    temp_file=$(mktemp)
+
+    for dir in "${HOST_DIRS[@]}"; do
+        find_matching_symlinks "$dir" >> "$temp_file"
+    done
+
+    sort -u "$temp_file" | while IFS= read -r link; do
+        remove_symlink "$link"
+    done
+
+    rm -f "$temp_file"
+}
+
+### **Main Execution Logic**
+
+if [[ "$FLAG" == "-R"* ]]; then
+    echo "Removing symlinks for package: $PACKAGE"
+    remove_symlinks
+else
+    echo "Creating symlinks for package: $PACKAGE"
+    create_symlinks
+fi
+
+echo "Done."
+
