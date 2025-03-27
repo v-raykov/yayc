@@ -24,9 +24,9 @@ IFS='-' read -ra PACKAGE_WORDS <<< "$PACKAGE"
 
 # Directories in the container where installed files reside
 CONTAINER_DIRS=(
-    "$CONTAINER_PATH/$LINK_BIN"
-    "$CONTAINER_PATH/$LINK_OPT"
-    "$CONTAINER_PATH/$LINK_APPLICATIONS"
+    "$CONTAINER_PATH/usr/bin"
+    "$CONTAINER_PATH/opt"
+    "$CONTAINER_PATH/usr/share/applications"
 )
 
 # Corresponding directories on the host where symlinks should be managed
@@ -43,19 +43,16 @@ find_matching_items() {
     local search_dir="$1"
     [[ -d "$search_dir" ]] || return
 
-    for word in "${PACKAGE_WORDS[@]}"; do
-        find "$search_dir" -mindepth 1 -maxdepth 1 -name "*$word*" \( -type f -o -type d \) 2>/dev/null
-    done
-}
-
-# Find existing symlinks in a given directory that match package words
-find_matching_symlinks() {
-    local search_dir="$1"
-    [[ -d "$search_dir" ]] || return
+    local -a results=()  # Array to store found items
 
     for word in "${PACKAGE_WORDS[@]}"; do
-        find "$search_dir" -mindepth 1 -maxdepth 1 -name "*$word*" -type l 2>/dev/null
+        while IFS= read -r item; do
+            results+=("$item")  # Append found items to array
+        done < <(find "$search_dir" -mindepth 1 -maxdepth 1 -iname "*$word*" \( -type f -o -type d -o -type l \) 2>/dev/null)
     done
+
+    # Remove duplicates and print results
+    printf "%s\n" "${results[@]}" | sort -u
 }
 
 # Create a symlink if the target exists and no symlink already exists
@@ -63,8 +60,11 @@ create_symlink() {
     local target="$1"
     local link_name="$2"
 
-    if [[ -e "$target" && ! -e "$link_name" ]]; then
-        echo "Creating symlink: $link_name -> $target"
+    if [[ -d "$target" && ! -e "$link_name" ]]; then
+        echo "Creating symlink for directory: $link_name -> $target"
+        sudo ln -sfn "$target" "$link_name"
+    elif [[ -f "$target" && ! -e "$link_name" ]]; then
+        echo "Creating symlink for file: $link_name -> $target"
         sudo ln -sfn "$target" "$link_name"
     fi
 }
@@ -83,14 +83,15 @@ remove_symlink() {
 
 # Create symlinks for matched package files
 create_symlinks() {
-    local temp_file
-    temp_file=$(mktemp)
+    local -a items=()
 
     for dir in "${CONTAINER_DIRS[@]}"; do
-        find_matching_items "$dir" >> "$temp_file"
+        while IFS= read -r item; do
+            items+=("$item")
+        done < <(find_matching_items "$dir")
     done
 
-    sort -u "$temp_file" | while IFS= read -r item; do
+    for item in "${items[@]}"; do
         local filename
         filename=$(basename "$item")
 
@@ -100,24 +101,21 @@ create_symlinks() {
             "$CONTAINER_PATH/usr/share/applications/"*) create_symlink "$item" "$LINK_APPLICATIONS/$filename" ;;
         esac
     done
-
-    rm -f "$temp_file"
 }
 
 # Remove symlinks for matched package files
 remove_symlinks() {
-    local temp_file
-    temp_file=$(mktemp)
+    local -a items=()
 
     for dir in "${HOST_DIRS[@]}"; do
-        find_matching_symlinks "$dir" >> "$temp_file"
+        while IFS= read -r link; do
+            items+=("$link")
+        done < <(find_matching_items "$dir")
     done
 
-    sort -u "$temp_file" | while IFS= read -r link; do
+    for link in "${items[@]}"; do
         remove_symlink "$link"
     done
-
-    rm -f "$temp_file"
 }
 
 ### **Main Execution Logic**
@@ -131,4 +129,3 @@ else
 fi
 
 echo "Done."
-
